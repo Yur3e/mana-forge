@@ -38,3 +38,18 @@ export const prints = async (req, res) => {
     return res.status(error.statusCode ?? 500).json({ error: error.message });
   }
 };
+
+export const suggestions = async (req, res) => {
+  const { name } = req.query;
+
+  if (!name) {
+    return res.status(400).json({ error: "Parâmetro 'name' é obrigatório." });
+  }
+
+  try {
+    const cardNames = await scryfallGateway.suggestNames(name);
+    return res.json(cardNames);
+  } catch (error) {
+    return res.status(error.statusCode ?? 500).json({ error: error.message });
+  }
+};

@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import {
   Archive,
   Clipboard,
@@ -9,11 +10,10 @@ import {
   Moon,
   Plus,
   Search,
-  Sparkles,
   Sun,
   Trash2
 } from 'lucide-react';
-import { listCardPrints, searchCard } from './api/cardsApi';
+import { listCardPrints, searchCard, suggestCards } from './api/cardsApi';
 import { deckJsonToText, deckToExportJson, downloadTextFile, groupCards } from './utils/deckExport';
 import { createLocalDeck, loadDecks, saveDecks } from './utils/localDecks';
 import { IconButton } from './components/IconButton';
@@ -23,10 +23,10 @@ const storageKeys = {
   theme: 'manaforge:theme',
   language: 'manaforge:language'
 };
+const suggestionLimit = 8;
 
 const translations = {
   pt: {
-    subtitle: 'Deck builder com exportação TXT',
     decks: 'Decks',
     saved: 'Salvos',
     deckName: 'Nome do deck',
@@ -68,7 +68,6 @@ const translations = {
     themeLabel: 'Alternar tema'
   },
   en: {
-    subtitle: 'Deck builder with TXT export',
     decks: 'Decks',
     saved: 'Saved',
     deckName: 'Deck name',
@@ -130,10 +129,12 @@ function App() {
   const [cardCondition, setCardCondition] = useState('');
   const [editions, setEditions] = useState([]);
   const [foundCard, setFoundCard] = useState(null);
-  const [loading, setLoading] = useState({ search: false, edition: false });
-  const [notice, setNotice] = useState({ type: 'idle', text: '' });
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loading, setLoading] = useState({ search: false, edition: false, suggestions: false });
   const [theme, setTheme] = useState(() => localStorage.getItem(storageKeys.theme) ?? 'light');
   const [language, setLanguage] = useState(() => localStorage.getItem(storageKeys.language) ?? 'pt');
+  const selectedSuggestionRef = useRef(false);
 
   const t = translations[language];
   const activeDeck = useMemo(
@@ -163,11 +164,50 @@ function App() {
     localStorage.setItem(storageKeys.language, language);
   }, [language]);
 
+  useEffect(() => {
+    const query = cardName.trim();
+
+    if (selectedSuggestionRef.current) {
+      selectedSuggestionRef.current = false;
+      setLoading((current) => ({ ...current, suggestions: false }));
+      return undefined;
+    }
+
+    if (!query) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setLoading((current) => ({ ...current, suggestions: false }));
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setLoading((current) => ({ ...current, suggestions: true }));
+
+      try {
+        const cardNames = await suggestCards(query, { signal: controller.signal });
+        setSuggestions(cardNames.slice(0, suggestionLimit));
+        setShowSuggestions(cardNames.length > 0);
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setSuggestions([]);
+          setShowSuggestions(false);
+        }
+      } finally {
+        setLoading((current) => ({ ...current, suggestions: false }));
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [cardName]);
+
   function handleCreateDeck(event) {
     event.preventDefault();
 
     if (!deckName.trim()) {
-      showError(t.fillDeckName);
       return;
     }
 
@@ -179,14 +219,19 @@ function App() {
     setDecks((current) => [deck, ...current]);
     setActiveDeckId(deck.id);
     setDeckName('');
-    showSuccess(t.created);
+  }
+
+  function handleSuggestionSelect(name) {
+    selectedSuggestionRef.current = true;
+    setCardName(name);
+    setSuggestions([]);
+    setShowSuggestions(false);
   }
 
   async function handleSearch(event) {
     event.preventDefault();
 
     if (!cardName.trim()) {
-      showError(t.fillCardName);
       return;
     }
 
@@ -203,10 +248,8 @@ function App() {
       setFoundCard(card);
       setEditions(prints);
       setCardEdition(card.setCode ?? '');
-      showSuccess(t.cardFound);
     } catch (error) {
       setFoundCard(null);
-      showError(error.message);
     } finally {
       setLoading((current) => ({ ...current, search: false }));
     }
@@ -225,9 +268,8 @@ function App() {
         edition: nextEdition
       });
       setFoundCard(card);
-      showSuccess(t.cardFound);
     } catch (error) {
-      showError(error.message);
+      return;
     } finally {
       setLoading((current) => ({ ...current, edition: false }));
     }
@@ -249,9 +291,8 @@ function App() {
       };
 
       setDecks((current) => current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck)));
-      showSuccess(t.cardAdded);
     } catch (error) {
-      showError(error.message);
+      return;
     }
   }
 
@@ -274,7 +315,6 @@ function App() {
     };
 
     setDecks((current) => current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck)));
-    showSuccess(t.cardRemoved);
   }
 
   function handleDeleteDeck(deckId) {
@@ -282,14 +322,12 @@ function App() {
 
     setDecks(nextDecks);
     setActiveDeckId(nextDecks[0]?.id ?? null);
-    showSuccess(t.deckRemoved);
   }
 
   async function handleCopyText() {
     if (!activeDeck || !exportText) return;
 
     await navigator.clipboard.writeText(exportText);
-    showSuccess(t.copied);
   }
 
   function handleDownloadTxt() {
@@ -298,41 +336,16 @@ function App() {
     downloadTextFile(`${slug(activeDeck.name)}.txt`, exportText, 'text/plain');
   }
 
-  function showSuccess(text) {
-    setNotice({ type: 'success', text });
-  }
-
-  function showError(text) {
-    setNotice({ type: 'error', text });
-  }
-
   return (
     <main className={theme === 'dark' ? 'dark' : ''}>
       <div className="min-h-screen bg-stone-100 text-zinc-950 transition-colors dark:bg-zinc-950 dark:text-zinc-50">
         <div className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-8">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-300 pb-4 dark:border-zinc-800">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-950 text-white dark:bg-emerald-500 dark:text-zinc-950">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-normal">ManaForge</h1>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">{t.subtitle}</p>
-              </div>
+              <h1 className="text-2xl font-semibold tracking-normal">ManaForge</h1>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {notice.text && (
-                <div
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    notice.type === 'error'
-                      ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
-                      : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
-                  }`}
-                >
-                  {notice.text}
-                </div>
-              )}
               <IconButton
                 icon={Languages}
                 label={t.languageLabel}
@@ -360,6 +373,7 @@ function App() {
                     onChange={(event) => setDeckName(event.target.value)}
                     className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
                     placeholder={t.deckName}
+                    required
                   />
 
                   <div className="grid grid-cols-3 rounded-md border border-zinc-300 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-950">
@@ -448,12 +462,47 @@ function App() {
               </div>
 
               <form className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_150px]" onSubmit={handleSearch}>
-                <input
-                  value={cardName}
-                  onChange={(event) => setCardName(event.target.value)}
-                  className="h-11 min-w-0 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
-                  placeholder={t.cardName}
-                />
+                <div className="relative min-w-0">
+                  <input
+                    value={cardName}
+                    onChange={(event) => {
+                      setCardName(event.target.value);
+                      setSuggestions([]);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(suggestions.length > 0)}
+                    onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
+                    className="h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
+                    placeholder={t.cardName}
+                    autoComplete="off"
+                    required
+                  />
+
+                  {(loading.suggestions || (showSuggestions && suggestions.length > 0)) && (
+                    <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-950">
+                      {loading.suggestions && suggestions.length === 0 ? (
+                        <div className="flex h-10 items-center px-3 text-sm text-zinc-500 dark:text-zinc-400">
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          {t.search}
+                        </div>
+                      ) : (
+                        suggestions.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              handleSuggestionSelect(suggestion);
+                            }}
+                            className="block h-10 w-full truncate px-3 text-left text-sm transition hover:bg-zinc-100 focus:bg-zinc-100 focus:outline-none dark:hover:bg-zinc-900 dark:focus:bg-zinc-900"
+                          >
+                            {suggestion}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
                 <button
                   type="submit"
                   disabled={loading.search}

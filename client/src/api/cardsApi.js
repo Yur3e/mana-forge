@@ -14,3 +14,8 @@ export function listCardPrints(name) {
   const params = new URLSearchParams({ name });
   return request(`/api/cards/prints?${params.toString()}`);
 }
+
+export function suggestCards(name, options = {}) {
+  const params = new URLSearchParams({ name });
+  return request(`/api/cards/suggestions?${params.toString()}`, options);
+}

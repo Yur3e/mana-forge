@@ -64,4 +64,20 @@ export class ScryfallGateway {
       throw providerError;
     }
   }
+
+  async suggestNames(name) {
+    try {
+      const response = await this.api.get('/cards/autocomplete', {
+        params: { q: name }
+      });
+
+      return response.data.data ?? [];
+    } catch (error) {
+      if (error.response?.status === 404) return [];
+
+      const providerError = new Error('Falha na comunicação com o provedor de dados.');
+      providerError.statusCode = 502;
+      throw providerError;
+    }
+  }
 }
