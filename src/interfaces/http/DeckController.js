@@ -1,4 +1,4 @@
-import { ScryfallGateway } from '../../infrastructure/external/ScryfallGateway.js';
+﻿import { ScryfallGateway } from '../../infrastructure/external/ScryfallGateway.js';
 import { InMemoryDeckRepository } from '../../infrastructure/repositories/InMemoryDeckRepository.js';
 import { SearchCardUseCase } from '../../application/use-cases/SearchCardUseCase.js';
 import { CreateDeckUseCase } from '../../application/use-cases/CreateDeckUseCase.js';
@@ -37,7 +37,7 @@ export const getById = (req, res) => {
   const deck = getDeckUseCase.execute(req.params.id);
 
   if (!deck) {
-    return res.status(404).json({ message: "Deck nao encontrado." });
+    return res.status(404).json({ message: "Deck não encontrado." });
   }
 
   return res.json(deck);
@@ -53,7 +53,7 @@ export const addCard = async (req, res) => {
     });
 
     if (!deck) {
-      return res.status(404).json({ message: "Deck nao encontrado." });
+      return res.status(404).json({ message: "Deck não encontrado." });
     }
 
     return res.json(deck);
@@ -65,3 +65,4 @@ export const addCard = async (req, res) => {
     return res.status(error.statusCode ?? 400).json({ error: error.message });
   }
 };
+

@@ -1,6 +1,6 @@
-export class Card {
+﻿export class Card {
   constructor({ id, name, type, rarity, manaCost, imageUrl, setCode, editionName, collectorNumber }) {
-    if (!name) throw new Error("O nome da carta e obrigatorio.");
+    if (!name) throw new Error("O nome da carta é obrigatório.");
     
     this.id = id;
     this.name = name;
@@ -13,3 +13,4 @@ export class Card {
     this.collectorNumber = collectorNumber;
   }
 }
+

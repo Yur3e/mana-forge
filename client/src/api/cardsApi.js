@@ -1,4 +1,4 @@
-import { request } from './http';
+﻿import { request } from './http';
 
 export function searchCard({ name, edition = '' }) {
   const params = new URLSearchParams({ name });
@@ -8,4 +8,9 @@ export function searchCard({ name, edition = '' }) {
   }
 
   return request(`/api/cards?${params.toString()}`);
+}
+
+export function listCardPrints(name) {
+  const params = new URLSearchParams({ name });
+  return request(`/api/cards/prints?${params.toString()}`);
 }

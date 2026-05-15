@@ -1,4 +1,4 @@
-export class AddCardToDeckUseCase {
+﻿export class AddCardToDeckUseCase {
   constructor({ deckRepository, searchCardUseCase }) {
     this.deckRepository = deckRepository;
     this.searchCardUseCase = searchCardUseCase;
@@ -6,7 +6,7 @@ export class AddCardToDeckUseCase {
 
   async execute({ deckId, cardName }) {
     if (!cardName) {
-      throw new Error("O nome da carta e obrigatorio.");
+      throw new Error("O nome da carta é obrigatório.");
     }
 
     const deck = this.deckRepository.findById(deckId);
@@ -16,7 +16,7 @@ export class AddCardToDeckUseCase {
 
     const card = await this.searchCardUseCase.execute(cardName);
     if (!card) {
-      const error = new Error("Carta nao encontrada.");
+      const error = new Error("Carta não encontrada.");
       error.statusCode = 404;
       throw error;
     }
@@ -27,3 +27,4 @@ export class AddCardToDeckUseCase {
     return deck;
   }
 }
+

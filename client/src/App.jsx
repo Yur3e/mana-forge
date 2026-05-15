@@ -1,28 +1,123 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   Clipboard,
   FileText,
+  Languages,
   Library,
   Loader2,
+  Moon,
   Plus,
   Search,
   Sparkles,
+  Sun,
   Trash2
 } from 'lucide-react';
-import { searchCard } from './api/cardsApi';
+import { listCardPrints, searchCard } from './api/cardsApi';
 import { deckJsonToText, deckToExportJson, downloadTextFile, groupCards } from './utils/deckExport';
 import { createLocalDeck, loadDecks, saveDecks } from './utils/localDecks';
 import { IconButton } from './components/IconButton';
 
 const formats = ['commander', 'pauper', 'standard'];
+const storageKeys = {
+  theme: 'manaforge:theme',
+  language: 'manaforge:language'
+};
+
+const translations = {
+  pt: {
+    subtitle: 'Deck builder com exportação TXT',
+    decks: 'Decks',
+    saved: 'Salvos',
+    deckName: 'Nome do deck',
+    createDeck: 'Criar deck',
+    noDecks: 'Nenhum deck criado.',
+    cardSearch: 'Busca de carta',
+    activeDeck: 'Deck ativo',
+    noActiveDeck: 'nenhum',
+    cardName: 'Nome da carta',
+    edition: 'Edição',
+    automaticEdition: 'Edição automática',
+    search: 'Buscar',
+    noCard: 'Nenhuma carta selecionada.',
+    result: 'Resultado',
+    card: 'Carta',
+    type: 'Tipo',
+    rarity: 'Raridade',
+    mana: 'Mana',
+    condition: 'Estado opcional',
+    addToDeck: 'Adicionar ao deck',
+    removeDeck: 'Remover deck',
+    removeCopy: 'Remover uma cópia',
+    copyTxt: 'Copiar TXT',
+    downloadTxt: 'Baixar TXT',
+    decklistTxt: 'Decklist TXT',
+    emptyDeck: 'Deck vazio.',
+    cards: 'cartas',
+    created: 'Deck criado no navegador.',
+    cardFound: 'Carta encontrada.',
+    cardAdded: 'Carta adicionada.',
+    cardRemoved: 'Carta removida.',
+    deckRemoved: 'Deck removido.',
+    copied: 'Decklist copiada.',
+    fillDeckName: 'Informe o nome do deck.',
+    fillCardName: 'Informe o nome da carta.',
+    deckLimit: 'Limite máximo de cartas no deck atingido.',
+    pauperRule: (name) => `A carta ${name} não é permitida no formato Pauper.`,
+    languageLabel: 'Usar inglês',
+    themeLabel: 'Alternar tema'
+  },
+  en: {
+    subtitle: 'Deck builder with TXT export',
+    decks: 'Decks',
+    saved: 'Saved',
+    deckName: 'Deck name',
+    createDeck: 'Create deck',
+    noDecks: 'No decks created.',
+    cardSearch: 'Card search',
+    activeDeck: 'Active deck',
+    noActiveDeck: 'none',
+    cardName: 'Card name',
+    edition: 'Edition',
+    automaticEdition: 'Automatic edition',
+    search: 'Search',
+    noCard: 'No card selected.',
+    result: 'Result',
+    card: 'Card',
+    type: 'Type',
+    rarity: 'Rarity',
+    mana: 'Mana',
+    condition: 'Optional condition',
+    addToDeck: 'Add to deck',
+    removeDeck: 'Remove deck',
+    removeCopy: 'Remove one copy',
+    copyTxt: 'Copy TXT',
+    downloadTxt: 'Download TXT',
+    decklistTxt: 'Decklist TXT',
+    emptyDeck: 'Empty deck.',
+    cards: 'cards',
+    created: 'Deck saved in this browser.',
+    cardFound: 'Card found.',
+    cardAdded: 'Card added.',
+    cardRemoved: 'Card removed.',
+    deckRemoved: 'Deck removed.',
+    copied: 'Decklist copied.',
+    fillDeckName: 'Enter the deck name.',
+    fillCardName: 'Enter the card name.',
+    deckLimit: 'Maximum deck size reached.',
+    pauperRule: (name) => `${name} is not legal in Pauper.`,
+    languageLabel: 'Use Portuguese',
+    themeLabel: 'Toggle theme'
+  }
+};
+
 const conditions = [
-  { value: '', label: 'Sem estado' },
-  { value: 'NM', label: 'Near Mint' },
-  { value: 'LP', label: 'Lightly Played' },
-  { value: 'MP', label: 'Moderately Played' },
-  { value: 'HP', label: 'Heavily Played' },
-  { value: 'DMG', label: 'Damaged' }
+  { value: '', pt: 'Sem estado', en: 'No condition' },
+  { value: 'NM', pt: 'Near Mint', en: 'Near Mint' },
+  { value: 'LP', pt: 'Pouco usada', en: 'Lightly Played' },
+  { value: 'MP', pt: 'Moderadamente usada', en: 'Moderately Played' },
+  { value: 'HP', pt: 'Muito usada', en: 'Heavily Played' },
+  { value: 'DMG', pt: 'Danificada', en: 'Damaged' }
 ];
 
 function App() {
@@ -33,10 +128,14 @@ function App() {
   const [cardName, setCardName] = useState('');
   const [cardEdition, setCardEdition] = useState('');
   const [cardCondition, setCardCondition] = useState('');
+  const [editions, setEditions] = useState([]);
   const [foundCard, setFoundCard] = useState(null);
-  const [loading, setLoading] = useState({ search: false });
+  const [loading, setLoading] = useState({ search: false, edition: false });
   const [notice, setNotice] = useState({ type: 'idle', text: '' });
+  const [theme, setTheme] = useState(() => localStorage.getItem(storageKeys.theme) ?? 'light');
+  const [language, setLanguage] = useState(() => localStorage.getItem(storageKeys.language) ?? 'pt');
 
+  const t = translations[language];
   const activeDeck = useMemo(
     () => decks.find((deck) => deck.id === activeDeckId) ?? decks[0] ?? null,
     [activeDeckId, decks]
@@ -44,6 +143,7 @@ function App() {
   const exportJson = useMemo(() => deckToExportJson(activeDeck), [activeDeck]);
   const exportText = useMemo(() => deckJsonToText(exportJson), [exportJson]);
   const groupedCards = useMemo(() => groupCards(activeDeck?.cards), [activeDeck]);
+  const editionOptions = useMemo(() => uniqueEditions(editions), [editions]);
 
   useEffect(() => {
     const storedDecks = loadDecks();
@@ -55,11 +155,19 @@ function App() {
     saveDecks(decks);
   }, [decks]);
 
+  useEffect(() => {
+    localStorage.setItem(storageKeys.theme, theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem(storageKeys.language, language);
+  }, [language]);
+
   function handleCreateDeck(event) {
     event.preventDefault();
 
     if (!deckName.trim()) {
-      showError('Informe o nome do deck.');
+      showError(t.fillDeckName);
       return;
     }
 
@@ -71,31 +179,57 @@ function App() {
     setDecks((current) => [deck, ...current]);
     setActiveDeckId(deck.id);
     setDeckName('');
-    showSuccess('Deck criado no navegador.');
+    showSuccess(t.created);
   }
 
   async function handleSearch(event) {
     event.preventDefault();
 
     if (!cardName.trim()) {
-      showError('Informe o nome da carta.');
+      showError(t.fillCardName);
       return;
     }
 
-    setLoading({ search: true });
+    setLoading((current) => ({ ...current, search: true }));
+    setEditions([]);
 
     try {
       const card = await searchCard({
         name: cardName.trim(),
-        edition: cardEdition.trim()
+        edition: cardEdition
       });
+      const prints = await listCardPrints(card.name);
+
       setFoundCard(card);
-      showSuccess('Carta encontrada.');
+      setEditions(prints);
+      setCardEdition(card.setCode ?? '');
+      showSuccess(t.cardFound);
     } catch (error) {
       setFoundCard(null);
       showError(error.message);
     } finally {
-      setLoading({ search: false });
+      setLoading((current) => ({ ...current, search: false }));
+    }
+  }
+
+  async function handleEditionChange(nextEdition) {
+    setCardEdition(nextEdition);
+
+    if (!foundCard || !cardName.trim()) return;
+
+    setLoading((current) => ({ ...current, edition: true }));
+
+    try {
+      const card = await searchCard({
+        name: foundCard.name,
+        edition: nextEdition
+      });
+      setFoundCard(card);
+      showSuccess(t.cardFound);
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      setLoading((current) => ({ ...current, edition: false }));
     }
   }
 
@@ -103,7 +237,7 @@ function App() {
     if (!activeDeck || !foundCard) return;
 
     try {
-      validateCardForDeck(activeDeck, foundCard);
+      validateCardForDeck(activeDeck, foundCard, t);
       const cardToAdd = {
         ...foundCard,
         condition: cardCondition || ''
@@ -114,10 +248,8 @@ function App() {
         cards: [...activeDeck.cards, cardToAdd]
       };
 
-      setDecks((current) =>
-        current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck))
-      );
-      showSuccess('Carta adicionada.');
+      setDecks((current) => current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck)));
+      showSuccess(t.cardAdded);
     } catch (error) {
       showError(error.message);
     }
@@ -141,10 +273,8 @@ function App() {
       cards: updatedCards
     };
 
-    setDecks((current) =>
-      current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck))
-    );
-    showSuccess('Carta removida.');
+    setDecks((current) => current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck)));
+    showSuccess(t.cardRemoved);
   }
 
   function handleDeleteDeck(deckId) {
@@ -152,14 +282,14 @@ function App() {
 
     setDecks(nextDecks);
     setActiveDeckId(nextDecks[0]?.id ?? null);
-    showSuccess('Deck removido.');
+    showSuccess(t.deckRemoved);
   }
 
   async function handleCopyText() {
     if (!activeDeck || !exportText) return;
 
     await navigator.clipboard.writeText(exportText);
-    showSuccess('Decklist copiada.');
+    showSuccess(t.copied);
   }
 
   function handleDownloadTxt() {
@@ -177,282 +307,315 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-stone-100 text-zinc-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-8">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-300 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-950 text-white">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-normal">ManaForge</h1>
-              <p className="text-sm text-zinc-600">Deck builder com exportacao TXT</p>
-            </div>
-          </div>
-
-          {notice.text && (
-            <div
-              className={`rounded-md border px-3 py-2 text-sm ${
-                notice.type === 'error'
-                  ? 'border-red-200 bg-red-50 text-red-700'
-                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              }`}
-            >
-              {notice.text}
-            </div>
-          )}
-        </header>
-
-        <div className="grid flex-1 gap-4 py-4 lg:grid-cols-[310px_minmax(0,1fr)_390px]">
-          <aside className="flex min-h-0 flex-col gap-4">
-            <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-panel">
-              <div className="mb-4 flex items-center gap-2">
-                <Archive className="h-4 w-4 text-emerald-700" />
-                <h2 className="text-base font-semibold">Decks</h2>
+    <main className={theme === 'dark' ? 'dark' : ''}>
+      <div className="min-h-screen bg-stone-100 text-zinc-950 transition-colors dark:bg-zinc-950 dark:text-zinc-50">
+        <div className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-8">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-300 pb-4 dark:border-zinc-800">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-950 text-white dark:bg-emerald-500 dark:text-zinc-950">
+                <Sparkles className="h-5 w-5" />
               </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-normal">ManaForge</h1>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">{t.subtitle}</p>
+              </div>
+            </div>
 
-              <form className="space-y-3" onSubmit={handleCreateDeck}>
-                <input
-                  value={deckName}
-                  onChange={(event) => setDeckName(event.target.value)}
-                  className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950"
-                  placeholder="Nome do deck"
-                />
-
-                <div className="grid grid-cols-3 rounded-md border border-zinc-300 bg-zinc-50 p-1">
-                  {formats.map((format) => (
-                    <button
-                      key={format}
-                      type="button"
-                      onClick={() => setDeckFormat(format)}
-                      className={`h-9 rounded text-xs font-medium capitalize transition ${
-                        deckFormat === format
-                          ? 'bg-zinc-950 text-white'
-                          : 'text-zinc-600 hover:text-zinc-950'
-                      }`}
-                    >
-                      {format}
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  type="submit"
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800"
+            <div className="flex flex-wrap items-center gap-2">
+              {notice.text && (
+                <div
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    notice.type === 'error'
+                      ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                  }`}
                 >
-                  <Plus className="h-4 w-4" />
-                  Criar deck
-                </button>
-              </form>
-            </section>
-
-            <section className="min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-panel">
-              <div className="flex items-center justify-between border-b border-zinc-200 p-4">
-                <div className="flex items-center gap-2">
-                  <Library className="h-4 w-4 text-amber-700" />
-                  <h2 className="text-base font-semibold">Salvos</h2>
+                  {notice.text}
                 </div>
-                <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600">
-                  {decks.length}
-                </span>
-              </div>
+              )}
+              <IconButton
+                icon={Languages}
+                label={t.languageLabel}
+                onClick={() => setLanguage((current) => (current === 'pt' ? 'en' : 'pt'))}
+              />
+              <IconButton
+                icon={theme === 'dark' ? Sun : Moon}
+                label={t.themeLabel}
+                onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+              />
+            </div>
+          </header>
 
-              <div className="max-h-[420px] overflow-y-auto p-2">
-                {decks.map((deck) => (
-                  <div
-                    key={deck.id}
-                    className={`mb-2 grid grid-cols-[minmax(0,1fr)_40px] items-center gap-2 rounded-md border p-2 transition ${
-                      activeDeck?.id === deck.id
-                        ? 'border-zinc-950 bg-zinc-950 text-white'
-                        : 'border-zinc-200 bg-white'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveDeckId(deck.id);
-                        setFoundCard(null);
-                      }}
-                      className="min-w-0 p-1 text-left"
-                    >
-                      <span className="block truncate text-sm font-semibold">{deck.name}</span>
-                      <span
-                        className={`mt-1 block text-xs capitalize ${
-                          activeDeck?.id === deck.id ? 'text-zinc-300' : 'text-zinc-500'
+          <div className="grid flex-1 gap-4 py-4 lg:grid-cols-[310px_minmax(0,1fr)_390px]">
+            <aside className="flex min-h-0 flex-col gap-4">
+              <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="mb-4 flex items-center gap-2">
+                  <Archive className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
+                  <h2 className="text-base font-semibold">{t.decks}</h2>
+                </div>
+
+                <form className="space-y-3" onSubmit={handleCreateDeck}>
+                  <input
+                    value={deckName}
+                    onChange={(event) => setDeckName(event.target.value)}
+                    className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
+                    placeholder={t.deckName}
+                  />
+
+                  <div className="grid grid-cols-3 rounded-md border border-zinc-300 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-950">
+                    {formats.map((format) => (
+                      <button
+                        key={format}
+                        type="button"
+                        onClick={() => setDeckFormat(format)}
+                        className={`h-9 rounded text-xs font-medium capitalize transition ${
+                          deckFormat === format
+                            ? 'bg-zinc-950 text-white dark:bg-emerald-500 dark:text-zinc-950'
+                            : 'text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50'
                         }`}
                       >
-                        {deck.format} - {deck.cards.length} cartas
-                      </span>
-                    </button>
-                    <IconButton
-                      icon={Trash2}
-                      label="Remover deck"
-                      onClick={() => handleDeleteDeck(deck.id)}
-                      className={activeDeck?.id === deck.id ? 'border-zinc-700 bg-zinc-900 text-zinc-200' : ''}
-                    />
+                        {format}
+                      </button>
+                    ))}
                   </div>
-                ))}
 
-                {decks.length === 0 && (
-                  <p className="p-3 text-sm text-zinc-500">Nenhum deck criado.</p>
-                )}
-              </div>
-            </section>
-          </aside>
+                  <button
+                    type="submit"
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {t.createDeck}
+                  </button>
+                </form>
+              </section>
 
-          <section className="min-h-0 rounded-lg border border-zinc-200 bg-white p-4 shadow-panel">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Busca de carta</h2>
-                <p className="text-sm text-zinc-600">Deck ativo: {activeDeck?.name ?? 'nenhum'}</p>
-              </div>
-            </div>
-
-            <form className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_150px_120px]" onSubmit={handleSearch}>
-              <input
-                value={cardName}
-                onChange={(event) => setCardName(event.target.value)}
-                className="h-11 min-w-0 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950"
-                placeholder="Nome da carta"
-              />
-              <input
-                value={cardEdition}
-                onChange={(event) => setCardEdition(event.target.value)}
-                className="h-11 min-w-0 rounded-md border border-zinc-300 bg-white px-3 text-sm uppercase outline-none transition focus:border-zinc-950"
-                placeholder="Edicao"
-              />
-              <button
-                type="submit"
-                disabled={loading.search}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loading.search ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                Buscar
-              </button>
-            </form>
-
-            <div className="mt-5 grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)]">
-              <div className="aspect-[488/680] overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
-                {foundCard?.imageUrl ? (
-                  <img src={foundCard.imageUrl} alt={foundCard.name} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-zinc-500">
-                    Nenhuma carta selecionada.
+              <section className="min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="flex items-center justify-between border-b border-zinc-200 p-4 dark:border-zinc-800">
+                  <div className="flex items-center gap-2">
+                    <Library className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+                    <h2 className="text-base font-semibold">{t.saved}</h2>
                   </div>
-                )}
-              </div>
-
-              <div className="flex min-h-[360px] flex-col rounded-lg border border-zinc-200 bg-stone-50 p-4">
-                <div className="flex-1">
-                  <p className="text-xs font-semibold uppercase text-zinc-500">Resultado</p>
-                  <h3 className="mt-2 text-2xl font-semibold">{foundCard?.name ?? 'Carta'}</h3>
-
-                  <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <Info label="Tipo" value={foundCard?.type ?? '-'} />
-                    <Info label="Raridade" value={foundCard?.rarity ?? '-'} />
-                    <Info label="Mana" value={foundCard?.manaCost ?? '-'} />
-                    <Info
-                      label="Edicao"
-                      value={foundCard?.setCode ? `${foundCard.editionName} (${foundCard.setCode.toUpperCase()})` : '-'}
-                    />
-                  </dl>
+                  <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                    {decks.length}
+                  </span>
                 </div>
 
-                <label className="mt-5 block">
-                  <span className="mb-2 block text-xs font-semibold uppercase text-zinc-500">Estado opcional</span>
-                  <select
-                    value={cardCondition}
-                    onChange={(event) => setCardCondition(event.target.value)}
-                    className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950"
-                  >
-                    {conditions.map((condition) => (
-                      <option key={condition.value} value={condition.value}>
-                        {condition.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="max-h-[420px] overflow-y-auto p-2">
+                  {decks.map((deck) => (
+                    <div
+                      key={deck.id}
+                      className={`mb-2 grid grid-cols-[minmax(0,1fr)_40px] items-center gap-2 rounded-md border p-2 transition ${
+                        activeDeck?.id === deck.id
+                          ? 'border-zinc-950 bg-zinc-950 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-zinc-950'
+                          : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDeckId(deck.id);
+                          setFoundCard(null);
+                          setEditions([]);
+                        }}
+                        className="min-w-0 p-1 text-left"
+                      >
+                        <span className="block truncate text-sm font-semibold">{deck.name}</span>
+                        <span
+                          className={`mt-1 block text-xs capitalize ${
+                            activeDeck?.id === deck.id ? 'text-zinc-300 dark:text-zinc-800' : 'text-zinc-500 dark:text-zinc-400'
+                          }`}
+                        >
+                          {deck.format} - {deck.cards.length} {t.cards}
+                        </span>
+                      </button>
+                      <IconButton icon={Trash2} label={t.removeDeck} onClick={() => handleDeleteDeck(deck.id)} />
+                    </div>
+                  ))}
 
-                <button
-                  type="button"
-                  disabled={!activeDeck || !foundCard}
-                  onClick={handleAddCard}
-                  className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-amber-600 px-4 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Plus className="h-4 w-4" />
-                  Adicionar ao deck
-                </button>
-              </div>
-            </div>
-          </section>
+                  {decks.length === 0 && <p className="p-3 text-sm text-zinc-500 dark:text-zinc-400">{t.noDecks}</p>}
+                </div>
+              </section>
+            </aside>
 
-          <aside className="flex min-h-0 flex-col gap-4">
-            <section className="min-h-[360px] rounded-lg border border-zinc-200 bg-white shadow-panel">
-              <div className="flex items-center justify-between border-b border-zinc-200 p-4">
+            <section className="min-h-0 rounded-lg border border-zinc-200 bg-white p-4 shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold">{activeDeck?.name ?? 'Deck'}</h2>
-                  <p className="text-sm capitalize text-zinc-600">
-                    {activeDeck?.format ?? '-'} - {activeDeck?.cards.length ?? 0} cartas
+                  <h2 className="text-lg font-semibold">{t.cardSearch}</h2>
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    {t.activeDeck}: {activeDeck?.name ?? t.noActiveDeck}
                   </p>
                 </div>
+              </div>
 
-                <div className="flex gap-2">
-                  <IconButton icon={Clipboard} label="Copiar TXT" onClick={handleCopyText} disabled={!activeDeck || !exportText} />
-                  <IconButton icon={FileText} label="Baixar TXT" onClick={handleDownloadTxt} disabled={!activeDeck} />
+              <form className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_150px]" onSubmit={handleSearch}>
+                <input
+                  value={cardName}
+                  onChange={(event) => setCardName(event.target.value)}
+                  className="h-11 min-w-0 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
+                  placeholder={t.cardName}
+                />
+                <button
+                  type="submit"
+                  disabled={loading.search}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400"
+                >
+                  {loading.search ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {t.search}
+                </button>
+              </form>
+
+              <label className="mt-3 block">
+                <span className="mb-2 block text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{t.edition}</span>
+                <select
+                  value={cardEdition}
+                  onChange={(event) => handleEditionChange(event.target.value)}
+                  disabled={!foundCard || loading.edition}
+                  className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
+                >
+                  <option value="">{t.automaticEdition}</option>
+                  {editionOptions.map((edition) => (
+                    <option key={edition.setCode} value={edition.setCode}>
+                      {edition.editionName} ({edition.setCode.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="mt-5 grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)]">
+                <div className="aspect-[488/680] overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950">
+                  {foundCard?.imageUrl ? (
+                    <img src={foundCard.imageUrl} alt={foundCard.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                      {t.noCard}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex min-h-[360px] flex-col rounded-lg border border-zinc-200 bg-stone-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{t.result}</p>
+                    <h3 className="mt-2 text-2xl font-semibold">{foundCard?.name ?? t.card}</h3>
+
+                    <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <Info label={t.type} value={foundCard?.type ?? '-'} />
+                      <Info label={t.rarity} value={foundCard?.rarity ?? '-'} />
+                      <Info label={t.mana} value={foundCard?.manaCost ?? '-'} />
+                      <Info
+                        label={t.edition}
+                        value={foundCard?.setCode ? `${foundCard.editionName} (${foundCard.setCode.toUpperCase()})` : '-'}
+                      />
+                    </dl>
+                  </div>
+
+                  <label className="mt-5 block">
+                    <span className="mb-2 block text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{t.condition}</span>
+                    <select
+                      value={cardCondition}
+                      onChange={(event) => setCardCondition(event.target.value)}
+                      className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-emerald-400"
+                    >
+                      {conditions.map((condition) => (
+                        <option key={condition.value} value={condition.value}>
+                          {condition[language]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    disabled={!activeDeck || !foundCard}
+                    onClick={handleAddCard}
+                    className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-amber-600 px-4 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-amber-400 dark:text-zinc-950 dark:hover:bg-amber-300"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {t.addToDeck}
+                  </button>
                 </div>
               </div>
+            </section>
 
-              <div className="max-h-[420px] overflow-y-auto p-3">
-                {groupedCards.map(({ quantity, card }) => (
-                  <div
-                    key={getCardEntryKey(card)}
-                    className="mb-2 grid grid-cols-[42px_minmax(0,1fr)_40px] gap-3 rounded-md border border-zinc-200 bg-white p-2"
-                  >
-                    <span className="flex h-10 w-10 items-center justify-center rounded bg-zinc-950 text-sm font-bold text-white">
-                      {quantity}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{card.name}</p>
-                      <p className="truncate text-xs text-zinc-500">
-                        {[card.setCode?.toUpperCase(), card.condition, card.type].filter(Boolean).join(' - ')}
-                      </p>
-                    </div>
-                    <IconButton icon={Trash2} label="Remover uma copia" onClick={() => handleRemoveCard(card)} />
+            <aside className="flex min-h-0 flex-col gap-4">
+              <section className="min-h-[360px] rounded-lg border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="flex items-center justify-between border-b border-zinc-200 p-4 dark:border-zinc-800">
+                  <div>
+                    <h2 className="text-lg font-semibold">{activeDeck?.name ?? 'Deck'}</h2>
+                    <p className="text-sm capitalize text-zinc-600 dark:text-zinc-400">
+                      {activeDeck?.format ?? '-'} - {activeDeck?.cards.length ?? 0} {t.cards}
+                    </p>
                   </div>
-                ))}
 
-                {groupedCards.length === 0 && <p className="p-3 text-sm text-zinc-500">Deck vazio.</p>}
-              </div>
-            </section>
+                  <div className="flex gap-2">
+                    <IconButton icon={Clipboard} label={t.copyTxt} onClick={handleCopyText} disabled={!activeDeck || !exportText} />
+                    <IconButton icon={FileText} label={t.downloadTxt} onClick={handleDownloadTxt} disabled={!activeDeck} />
+                  </div>
+                </div>
 
-            <section className="rounded-lg border border-zinc-200 bg-white shadow-panel">
-              <div className="border-b border-zinc-200 p-4">
-                <h2 className="text-base font-semibold">Decklist TXT</h2>
-              </div>
+                <div className="max-h-[420px] overflow-y-auto p-3">
+                  {groupedCards.map(({ quantity, card }) => (
+                    <div
+                      key={getCardEntryKey(card)}
+                      className="mb-2 grid grid-cols-[42px_minmax(0,1fr)_40px] gap-3 rounded-md border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950"
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded bg-zinc-950 text-sm font-bold text-white dark:bg-emerald-500 dark:text-zinc-950">
+                        {quantity}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{card.name}</p>
+                        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                          {[card.setCode?.toUpperCase(), card.condition, card.type].filter(Boolean).join(' - ')}
+                        </p>
+                      </div>
+                      <IconButton icon={Trash2} label={t.removeCopy} onClick={() => handleRemoveCard(card)} />
+                    </div>
+                  ))}
 
-              <div className="grid gap-3 p-4">
-                <textarea
-                  value={exportText}
-                  readOnly
-                  className="h-56 resize-none rounded-md border border-zinc-300 bg-zinc-50 p-3 font-mono text-xs text-zinc-700 outline-none"
-                />
-              </div>
-            </section>
-          </aside>
+                  {groupedCards.length === 0 && <p className="p-3 text-sm text-zinc-500 dark:text-zinc-400">{t.emptyDeck}</p>}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="border-b border-zinc-200 p-4 dark:border-zinc-800">
+                  <h2 className="text-base font-semibold">{t.decklistTxt}</h2>
+                </div>
+
+                <div className="grid gap-3 p-4">
+                  <textarea
+                    value={exportText}
+                    readOnly
+                    className="h-56 resize-none rounded-md border border-zinc-300 bg-zinc-50 p-3 font-mono text-xs text-zinc-700 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                  />
+                </div>
+              </section>
+            </aside>
+          </div>
         </div>
       </div>
     </main>
   );
 }
 
-function validateCardForDeck(deck, card) {
+function validateCardForDeck(deck, card, t) {
   if (deck.cards.length >= 100) {
-    throw new Error('Limite maximo de cartas no deck atingido.');
+    throw new Error(t.deckLimit);
   }
 
   if (deck.format === 'pauper' && card.rarity !== 'common') {
-    throw new Error(`A carta ${card.name} nao e permitida no formato Pauper.`);
+    throw new Error(t.pauperRule(card.name));
   }
+}
+
+function uniqueEditions(editions) {
+  const seen = new Map();
+
+  for (const edition of editions) {
+    if (!seen.has(edition.setCode)) {
+      seen.set(edition.setCode, edition);
+    }
+  }
+
+  return Array.from(seen.values());
 }
 
 function isSameCardEntry(card, reference) {
@@ -465,9 +628,9 @@ function getCardEntryKey(card) {
 
 function Info({ label, value }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-white p-3">
-      <dt className="text-xs font-semibold uppercase text-zinc-500">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-medium text-zinc-950">{value}</dd>
+    <div className="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+      <dt className="text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-medium text-zinc-950 dark:text-zinc-50">{value}</dd>
     </div>
   );
 }

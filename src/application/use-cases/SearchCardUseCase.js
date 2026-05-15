@@ -1,4 +1,4 @@
-export class SearchCardUseCase {
+﻿export class SearchCardUseCase {
   constructor(cardGateway) {
     this.cardGateway = cardGateway;
   }
@@ -7,7 +7,7 @@ export class SearchCardUseCase {
     const { name, edition } = normalizeInput(input);
 
     if (!name) {
-      const error = new Error("O nome da carta e obrigatorio.");
+      const error = new Error("O nome da carta é obrigatório.");
       error.statusCode = 400;
       throw error;
     }
@@ -26,3 +26,4 @@ function normalizeInput(input) {
     edition: input?.edition?.trim() ?? ''
   };
 }
+
