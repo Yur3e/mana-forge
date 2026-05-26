@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRef } from 'react';
 import {
   Archive,
@@ -11,7 +11,11 @@ import {
   Plus,
   Search,
   Sun,
-  Trash2
+  Trash2,
+  Sword,
+  Sparkles,
+  Shield,
+  ChevronDown
 } from 'lucide-react';
 import { listCardPrints, searchCard, suggestCards } from './api/cardsApi';
 import { deckJsonToText, deckToExportJson, downloadTextFile, groupCards } from './utils/deckExport';
@@ -119,6 +123,15 @@ const conditions = [
   { value: 'DMG', pt: 'Danificada', en: 'Damaged' }
 ];
 
+/* ─── Rarity badge color ─────────────────────────────── */
+function rarityStyle(rarity) {
+  const r = (rarity ?? '').toLowerCase();
+  if (r === 'mythic rare') return { bg: 'bg-orange-900/60 text-orange-300 border-orange-700/50' };
+  if (r === 'rare')        return { bg: 'bg-yellow-900/60 text-yellow-300 border-yellow-700/50' };
+  if (r === 'uncommon')    return { bg: 'bg-slate-700/60 text-slate-300 border-slate-600/50' };
+  return                          { bg: 'bg-stone-800/60 text-stone-400 border-stone-700/50' };
+}
+
 function App() {
   const [decks, setDecks] = useState([]);
   const [activeDeckId, setActiveDeckId] = useState(null);
@@ -132,7 +145,7 @@ function App() {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState({ search: false, edition: false, suggestions: false });
-  const [theme, setTheme] = useState(() => localStorage.getItem(storageKeys.theme) ?? 'light');
+  const [theme, setTheme] = useState(() => localStorage.getItem(storageKeys.theme) ?? 'dark');
   const [language, setLanguage] = useState(() => localStorage.getItem(storageKeys.language) ?? 'pt');
   const selectedSuggestionRef = useRef(false);
 
@@ -152,71 +165,44 @@ function App() {
     setActiveDeckId(storedDecks[0]?.id ?? null);
   }, []);
 
-  useEffect(() => {
-    saveDecks(decks);
-  }, [decks]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKeys.theme, theme);
-  }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKeys.language, language);
-  }, [language]);
+  useEffect(() => { saveDecks(decks); }, [decks]);
+  useEffect(() => { localStorage.setItem(storageKeys.theme, theme); }, [theme]);
+  useEffect(() => { localStorage.setItem(storageKeys.language, language); }, [language]);
 
   useEffect(() => {
     const query = cardName.trim();
-
     if (selectedSuggestionRef.current) {
       selectedSuggestionRef.current = false;
-      setLoading((current) => ({ ...current, suggestions: false }));
+      setLoading((c) => ({ ...c, suggestions: false }));
       return undefined;
     }
-
     if (!query) {
       setSuggestions([]);
       setShowSuggestions(false);
-      setLoading((current) => ({ ...current, suggestions: false }));
+      setLoading((c) => ({ ...c, suggestions: false }));
       return undefined;
     }
-
     const controller = new AbortController();
     const timeoutId = window.setTimeout(async () => {
-      setLoading((current) => ({ ...current, suggestions: true }));
-
+      setLoading((c) => ({ ...c, suggestions: true }));
       try {
         const cardNames = await suggestCards(query, { signal: controller.signal });
         setSuggestions(cardNames.slice(0, suggestionLimit));
         setShowSuggestions(cardNames.length > 0);
       } catch (error) {
-        if (error.name !== 'AbortError') {
-          setSuggestions([]);
-          setShowSuggestions(false);
-        }
+        if (error.name !== 'AbortError') { setSuggestions([]); setShowSuggestions(false); }
       } finally {
-        setLoading((current) => ({ ...current, suggestions: false }));
+        setLoading((c) => ({ ...c, suggestions: false }));
       }
     }, 250);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
+    return () => { window.clearTimeout(timeoutId); controller.abort(); };
   }, [cardName]);
 
   function handleCreateDeck(event) {
     event.preventDefault();
-
-    if (!deckName.trim()) {
-      return;
-    }
-
-    const deck = createLocalDeck({
-      name: deckName.trim(),
-      format: deckFormat
-    });
-
-    setDecks((current) => [deck, ...current]);
+    if (!deckName.trim()) return;
+    const deck = createLocalDeck({ name: deckName.trim(), format: deckFormat });
+    setDecks((c) => [deck, ...c]);
     setActiveDeckId(deck.id);
     setDeckName('');
   }
@@ -230,413 +216,696 @@ function App() {
 
   async function handleSearch(event) {
     event.preventDefault();
-
-    if (!cardName.trim()) {
-      return;
-    }
-
-    setLoading((current) => ({ ...current, search: true }));
+    if (!cardName.trim()) return;
+    setLoading((c) => ({ ...c, search: true }));
     setEditions([]);
-
     try {
-      const card = await searchCard({
-        name: cardName.trim(),
-        edition: cardEdition
-      });
+      const card = await searchCard({ name: cardName.trim(), edition: cardEdition });
       const prints = await listCardPrints(card.name);
-
       setFoundCard(card);
       setEditions(prints);
       setCardEdition(card.setCode ?? '');
-    } catch (error) {
+    } catch {
       setFoundCard(null);
     } finally {
-      setLoading((current) => ({ ...current, search: false }));
+      setLoading((c) => ({ ...c, search: false }));
     }
   }
 
   async function handleEditionChange(nextEdition) {
     setCardEdition(nextEdition);
-
     if (!foundCard || !cardName.trim()) return;
-
-    setLoading((current) => ({ ...current, edition: true }));
-
+    setLoading((c) => ({ ...c, edition: true }));
     try {
-      const card = await searchCard({
-        name: foundCard.name,
-        edition: nextEdition
-      });
+      const card = await searchCard({ name: foundCard.name, edition: nextEdition });
       setFoundCard(card);
-    } catch (error) {
-      return;
-    } finally {
-      setLoading((current) => ({ ...current, edition: false }));
-    }
+    } catch { return; }
+    finally { setLoading((c) => ({ ...c, edition: false })); }
   }
 
   function handleAddCard() {
     if (!activeDeck || !foundCard) return;
-
     try {
       validateCardForDeck(activeDeck, foundCard, t);
-      const cardToAdd = {
-        ...foundCard,
-        condition: cardCondition || ''
-      };
-
-      const updatedDeck = {
-        ...activeDeck,
-        cards: [...activeDeck.cards, cardToAdd]
-      };
-
-      setDecks((current) => current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck)));
-    } catch (error) {
-      return;
-    }
+      const cardToAdd = { ...foundCard, condition: cardCondition || '' };
+      const updatedDeck = { ...activeDeck, cards: [...activeDeck.cards, cardToAdd] };
+      setDecks((c) => c.map((d) => (d.id === updatedDeck.id ? updatedDeck : d)));
+    } catch { return; }
   }
 
   function handleRemoveCard(cardToRemove) {
     if (!activeDeck) return;
-
     let removed = false;
     const updatedCards = activeDeck.cards.filter((card) => {
-      if (!removed && isSameCardEntry(card, cardToRemove)) {
-        removed = true;
-        return false;
-      }
-
+      if (!removed && isSameCardEntry(card, cardToRemove)) { removed = true; return false; }
       return true;
     });
-
-    const updatedDeck = {
-      ...activeDeck,
-      cards: updatedCards
-    };
-
-    setDecks((current) => current.map((deck) => (deck.id === updatedDeck.id ? updatedDeck : deck)));
+    setDecks((c) => c.map((d) => (d.id === activeDeck.id ? { ...activeDeck, cards: updatedCards } : d)));
   }
 
   function handleDeleteDeck(deckId) {
-    const nextDecks = decks.filter((deck) => deck.id !== deckId);
-
+    const nextDecks = decks.filter((d) => d.id !== deckId);
     setDecks(nextDecks);
     setActiveDeckId(nextDecks[0]?.id ?? null);
   }
 
   async function handleCopyText() {
     if (!activeDeck || !exportText) return;
-
     await navigator.clipboard.writeText(exportText);
   }
 
   function handleDownloadTxt() {
     if (!activeDeck) return;
-
     downloadTextFile(`${slug(activeDeck.name)}.txt`, exportText, 'text/plain');
   }
 
+  const isDark = theme === 'dark';
+
   return (
-    <main className={theme === 'dark' ? 'dark' : ''}>
-      <div className="min-h-screen bg-stone-100 text-zinc-950 transition-colors dark:bg-zinc-950 dark:text-zinc-50">
-        <div className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-8">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-300 pb-4 dark:border-zinc-800">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-normal">ManaForge</h1>
+    <main className={isDark ? 'dark' : ''}>
+      {/* ── Global styles injected once ── */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&display=swap');
+
+        .mf-root {
+          font-family: 'Crimson Pro', Georgia, serif;
+          background: #0d0f14;
+          color: #e8e0d0;
+          min-height: 100vh;
+        }
+        .mf-root.light {
+          background: #f5f0e8;
+          color: #1a1510;
+        }
+
+        /* Parchment texture via pseudo + gradient */
+        .mf-root::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          background:
+            repeating-linear-gradient(0deg, transparent, transparent 31px, rgba(255,255,255,.015) 31px, rgba(255,255,255,.015) 32px),
+            repeating-linear-gradient(90deg, transparent, transparent 79px, rgba(255,255,255,.008) 79px, rgba(255,255,255,.008) 80px);
+          pointer-events: none;
+          z-index: 0;
+        }
+        .mf-root > * { position: relative; z-index: 1; }
+
+        /* Panel */
+        .panel {
+          background: rgba(20,17,13,.85);
+          border: 1px solid rgba(180,145,60,.22);
+          border-radius: 6px;
+          backdrop-filter: blur(4px);
+        }
+        .light .panel {
+          background: rgba(245,238,220,.9);
+          border-color: rgba(120,85,30,.25);
+        }
+
+        /* Panel header divider */
+        .panel-header {
+          border-bottom: 1px solid rgba(180,145,60,.18);
+          padding: 14px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        /* Cinzel headings */
+        .cinzel { font-family: 'Cinzel', serif; letter-spacing: .04em; }
+
+        /* Inputs */
+        .mf-input {
+          height: 40px;
+          width: 100%;
+          background: rgba(0,0,0,.35);
+          border: 1px solid rgba(180,145,60,.3);
+          border-radius: 4px;
+          padding: 0 12px;
+          font-family: 'Crimson Pro', serif;
+          font-size: 15px;
+          color: #e8e0d0;
+          outline: none;
+          transition: border-color .2s;
+        }
+        .light .mf-input {
+          background: rgba(255,255,255,.6);
+          color: #1a1510;
+        }
+        .mf-input:focus { border-color: rgba(180,145,60,.75); }
+        .mf-input::placeholder { color: rgba(200,185,155,.35); }
+        .mf-select {
+          appearance: none;
+          -webkit-appearance: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23b49140' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 12px center;
+          padding-right: 32px !important;
+          cursor: pointer;
+        }
+
+        /* Buttons */
+        .btn-primary {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          height: 40px;
+          padding: 0 18px;
+          border-radius: 4px;
+          font-family: 'Cinzel', serif;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: .08em;
+          cursor: pointer;
+          transition: all .2s;
+          border: 1px solid;
+        }
+        .btn-gold {
+          background: linear-gradient(135deg, #c8a84b 0%, #e8c96a 50%, #b8942e 100%);
+          border-color: #c8a84b;
+          color: #1a1208;
+        }
+        .btn-gold:hover { filter: brightness(1.12); }
+        .btn-gold:disabled { opacity: .4; cursor: not-allowed; filter: none; }
+        .btn-emerald {
+          background: linear-gradient(135deg, #1a6b4a 0%, #20865e 50%, #155c3e 100%);
+          border-color: #1f7a52;
+          color: #a8f0d0;
+        }
+        .btn-emerald:hover { filter: brightness(1.15); }
+        .btn-emerald:disabled { opacity: .4; cursor: not-allowed; filter: none; }
+        .btn-ghost {
+          background: transparent;
+          border-color: rgba(180,145,60,.3);
+          color: #b8a070;
+          height: 34px;
+          width: 34px;
+          padding: 0;
+          border-radius: 4px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all .2s;
+        }
+        .btn-ghost:hover { background: rgba(180,145,60,.1); border-color: rgba(180,145,60,.6); color: #e8c96a; }
+        .btn-ghost:disabled { opacity: .35; cursor: not-allowed; }
+
+        /* Format tab selector */
+        .fmt-bar {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          background: rgba(0,0,0,.4);
+          border: 1px solid rgba(180,145,60,.2);
+          border-radius: 4px;
+          padding: 3px;
+          gap: 3px;
+        }
+        .light .fmt-bar { background: rgba(0,0,0,.06); }
+        .fmt-tab {
+          height: 34px;
+          border-radius: 3px;
+          font-family: 'Cinzel', serif;
+          font-size: 10px;
+          letter-spacing: .1em;
+          font-weight: 600;
+          text-transform: uppercase;
+          cursor: pointer;
+          border: none;
+          transition: all .2s;
+          color: rgba(180,155,90,.55);
+          background: transparent;
+        }
+        .fmt-tab.active {
+          background: linear-gradient(135deg, #c8a84b, #e8c96a);
+          color: #1a1208;
+        }
+        .fmt-tab:not(.active):hover { color: #c8a84b; }
+
+        /* Deck list item */
+        .deck-item {
+          display: grid;
+          grid-template-columns: 1fr 34px;
+          align-items: center;
+          gap: 8px;
+          border-radius: 4px;
+          border: 1px solid rgba(180,145,60,.15);
+          padding: 8px 10px;
+          margin-bottom: 6px;
+          transition: all .2s;
+          cursor: pointer;
+          background: rgba(0,0,0,.2);
+        }
+        .deck-item:hover { border-color: rgba(180,145,60,.4); background: rgba(180,145,60,.06); }
+        .deck-item.active {
+          background: rgba(180,145,60,.12);
+          border-color: rgba(180,145,60,.65);
+        }
+        .light .deck-item { background: rgba(255,255,255,.4); }
+        .light .deck-item.active { background: rgba(180,120,20,.1); }
+
+        /* Card entry in decklist */
+        .card-entry {
+          display: grid;
+          grid-template-columns: 38px 1fr 34px;
+          align-items: center;
+          gap: 8px;
+          border-radius: 4px;
+          border: 1px solid rgba(180,145,60,.12);
+          padding: 6px 8px;
+          margin-bottom: 5px;
+          background: rgba(0,0,0,.2);
+          transition: border-color .2s;
+        }
+        .card-entry:hover { border-color: rgba(180,145,60,.35); }
+        .light .card-entry { background: rgba(255,255,255,.35); }
+
+        /* Badge */
+        .badge {
+          display: inline-block;
+          padding: 2px 7px;
+          border-radius: 3px;
+          font-size: 11px;
+          font-family: 'Cinzel', serif;
+          letter-spacing: .06em;
+          border: 1px solid;
+        }
+
+        /* Decorative rule */
+        .divider {
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(180,145,60,.35), transparent);
+          margin: 2px 0;
+        }
+
+        /* Scrollbar */
+        .mf-scroll::-webkit-scrollbar { width: 4px; }
+        .mf-scroll::-webkit-scrollbar-track { background: transparent; }
+        .mf-scroll::-webkit-scrollbar-thumb { background: rgba(180,145,60,.25); border-radius: 2px; }
+        .mf-scroll::-webkit-scrollbar-thumb:hover { background: rgba(180,145,60,.45); }
+
+        /* Card image frame */
+        .card-frame {
+          border: 1px solid rgba(180,145,60,.3);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(0,0,0,.5);
+          position: relative;
+          display: flex;
+          align-items: stretch;
+        }
+        .card-frame::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: 8px;
+          box-shadow: inset 0 0 30px rgba(0,0,0,.4);
+          pointer-events: none;
+        }
+
+        /* Textarea */
+        .mf-textarea {
+          width: 100%;
+          background: rgba(0,0,0,.4);
+          border: 1px solid rgba(180,145,60,.2);
+          border-radius: 4px;
+          padding: 10px 12px;
+          font-family: 'Courier New', monospace;
+          font-size: 12px;
+          color: #b8c890;
+          resize: none;
+          outline: none;
+          transition: border-color .2s;
+        }
+        .light .mf-textarea { background: rgba(255,255,255,.5); color: #2a4a18; }
+        .mf-textarea:focus { border-color: rgba(180,145,60,.5); }
+
+        /* Autocomplete dropdown */
+        .suggest-drop {
+          position: absolute;
+          left: 0; right: 0;
+          top: calc(100% + 4px);
+          z-index: 50;
+          background: #1a1610;
+          border: 1px solid rgba(180,145,60,.35);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+        .light .suggest-drop { background: #f8f2e4; }
+        .suggest-item {
+          display: block;
+          width: 100%;
+          padding: 9px 12px;
+          text-align: left;
+          font-family: 'Crimson Pro', serif;
+          font-size: 15px;
+          color: #c8b888;
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          transition: background .15s;
+          border-bottom: 1px solid rgba(180,145,60,.08);
+        }
+        .suggest-item:last-child { border-bottom: none; }
+        .suggest-item:hover { background: rgba(180,145,60,.1); color: #e8c96a; }
+        .light .suggest-item { color: #6a5010; }
+
+        /* Info grid item */
+        .info-tile {
+          background: rgba(0,0,0,.3);
+          border: 1px solid rgba(180,145,60,.15);
+          border-radius: 4px;
+          padding: 10px 12px;
+        }
+        .light .info-tile { background: rgba(255,255,255,.4); }
+
+        /* Fade-in animation */
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .fade-up { animation: fadeUp .35s ease forwards; }
+
+        /* Logo flame accent */
+        .logo-accent {
+          background: linear-gradient(135deg, #c8a84b, #e8c96a, #ff9040);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        /* Subtle noise overlay */
+        .noise::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          opacity: .03;
+          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+          pointer-events: none;
+          border-radius: inherit;
+        }
+      `}</style>
+
+      <div className={`mf-root${isDark ? '' : ' light'}`} style={{ padding: '0' }}>
+        <div style={{ maxWidth: 1520, margin: '0 auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', minHeight: '100vh', gap: 0 }}>
+
+          {/* ── HEADER ─────────────────────────────────────────────────────── */}
+          <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16, borderBottom: '1px solid rgba(180,145,60,.2)', marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 6, background: 'linear-gradient(135deg,#c8a84b,#e8c96a)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Sparkles size={18} color="#1a1208" />
+              </div>
+              <div>
+                <h1 className="cinzel logo-accent" style={{ fontSize: 22, fontWeight: 700, margin: 0, lineHeight: 1 }}>ManaForge</h1>
+                <p style={{ fontSize: 11, color: 'rgba(180,145,60,.55)', margin: 0, letterSpacing: '.12em', fontFamily: 'Cinzel,serif', textTransform: 'uppercase' }}>Deck Builder</p>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <IconButton
-                icon={Languages}
-                label={t.languageLabel}
-                onClick={() => setLanguage((current) => (current === 'pt' ? 'en' : 'pt'))}
-              />
-              <IconButton
-                icon={theme === 'dark' ? Sun : Moon}
-                label={t.themeLabel}
-                onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-              />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn-ghost"
+                title={t.languageLabel}
+                onClick={() => setLanguage((c) => (c === 'pt' ? 'en' : 'pt'))}
+                style={{ width: 'auto', padding: '0 12px', gap: 6, fontSize: 12, fontFamily: 'Cinzel,serif', letterSpacing: '.06em' }}
+              >
+                <Languages size={14} />
+                {language === 'pt' ? 'EN' : 'PT'}
+              </button>
+              <button className="btn-ghost" title={t.themeLabel} onClick={() => setTheme((c) => (c === 'dark' ? 'light' : 'dark'))}>
+                {isDark ? <Sun size={15} /> : <Moon size={15} />}
+              </button>
             </div>
           </header>
 
-          <div className="grid flex-1 gap-4 py-4 lg:grid-cols-[310px_minmax(0,1fr)_390px]">
-            <aside className="flex min-h-0 flex-col gap-4">
-              <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="mb-4 flex items-center gap-2">
-                  <Archive className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
-                  <h2 className="text-base font-semibold">{t.decks}</h2>
+          {/* ── MAIN GRID ──────────────────────────────────────────────────── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '290px 1fr 370px', gap: 16, flex: 1 }}>
+
+            {/* ══ LEFT SIDEBAR ═══════════════════════════════════════════════ */}
+            <aside style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* Create deck */}
+              <div className="panel" style={{ padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <Archive size={14} style={{ color: '#c8a84b' }} />
+                  <span className="cinzel" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.1em', color: '#c8a84b', textTransform: 'uppercase' }}>{t.decks}</span>
                 </div>
 
-                <form className="space-y-3" onSubmit={handleCreateDeck}>
+                <form onSubmit={handleCreateDeck} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <input
+                    className="mf-input"
                     value={deckName}
-                    onChange={(event) => setDeckName(event.target.value)}
-                    className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
+                    onChange={(e) => setDeckName(e.target.value)}
                     placeholder={t.deckName}
                     required
                   />
 
-                  <div className="grid grid-cols-3 rounded-md border border-zinc-300 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-950">
-                    {formats.map((format) => (
+                  <div className="fmt-bar">
+                    {formats.map((f) => (
                       <button
-                        key={format}
+                        key={f}
                         type="button"
-                        onClick={() => setDeckFormat(format)}
-                        className={`h-9 rounded text-xs font-medium capitalize transition ${
-                          deckFormat === format
-                            ? 'bg-zinc-950 text-white dark:bg-emerald-500 dark:text-zinc-950'
-                            : 'text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50'
-                        }`}
+                        className={`fmt-tab${deckFormat === f ? ' active' : ''}`}
+                        onClick={() => setDeckFormat(f)}
                       >
-                        {format}
+                        {f}
                       </button>
                     ))}
                   </div>
 
-                  <button
-                    type="submit"
-                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400"
-                  >
-                    <Plus className="h-4 w-4" />
+                  <button type="submit" className="btn-primary btn-gold" style={{ width: '100%' }}>
+                    <Plus size={13} />
                     {t.createDeck}
                   </button>
                 </form>
-              </section>
-
-              <section className="min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="flex items-center justify-between border-b border-zinc-200 p-4 dark:border-zinc-800">
-                  <div className="flex items-center gap-2">
-                    <Library className="h-4 w-4 text-amber-700 dark:text-amber-400" />
-                    <h2 className="text-base font-semibold">{t.saved}</h2>
-                  </div>
-                  <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                    {decks.length}
-                  </span>
-                </div>
-
-                <div className="max-h-[420px] overflow-y-auto p-2">
-                  {decks.map((deck) => (
-                    <div
-                      key={deck.id}
-                      className={`mb-2 grid grid-cols-[minmax(0,1fr)_40px] items-center gap-2 rounded-md border p-2 transition ${
-                        activeDeck?.id === deck.id
-                          ? 'border-zinc-950 bg-zinc-950 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-zinc-950'
-                          : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveDeckId(deck.id);
-                          setFoundCard(null);
-                          setEditions([]);
-                        }}
-                        className="min-w-0 p-1 text-left"
-                      >
-                        <span className="block truncate text-sm font-semibold">{deck.name}</span>
-                        <span
-                          className={`mt-1 block text-xs capitalize ${
-                            activeDeck?.id === deck.id ? 'text-zinc-300 dark:text-zinc-800' : 'text-zinc-500 dark:text-zinc-400'
-                          }`}
-                        >
-                          {deck.format} - {deck.cards.length} {t.cards}
-                        </span>
-                      </button>
-                      <IconButton icon={Trash2} label={t.removeDeck} onClick={() => handleDeleteDeck(deck.id)} />
-                    </div>
-                  ))}
-
-                  {decks.length === 0 && <p className="p-3 text-sm text-zinc-500 dark:text-zinc-400">{t.noDecks}</p>}
-                </div>
-              </section>
-            </aside>
-
-            <section className="min-h-0 rounded-lg border border-zinc-200 bg-white p-4 shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold">{t.cardSearch}</h2>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    {t.activeDeck}: {activeDeck?.name ?? t.noActiveDeck}
-                  </p>
-                </div>
               </div>
 
-              <form className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_150px]" onSubmit={handleSearch}>
-                <div className="relative min-w-0">
+              {/* Saved decks */}
+              <div className="panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="panel-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Library size={14} style={{ color: '#20865e' }} />
+                    <span className="cinzel" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.1em', color: '#20865e', textTransform: 'uppercase' }}>{t.saved}</span>
+                  </div>
+                  <span style={{ background: 'rgba(180,145,60,.15)', border: '1px solid rgba(180,145,60,.3)', borderRadius: 3, padding: '1px 8px', fontSize: 12, color: '#c8a84b', fontFamily: 'Cinzel,serif' }}>{decks.length}</span>
+                </div>
+
+                <div className="mf-scroll" style={{ padding: '10px 12px', overflowY: 'auto', flex: 1 }}>
+                  {decks.length === 0 && (
+                    <p style={{ fontSize: 14, color: 'rgba(180,155,90,.45)', textAlign: 'center', padding: '20px 0', fontStyle: 'italic' }}>{t.noDecks}</p>
+                  )}
+                  {decks.map((deck) => (
+                    <div key={deck.id} className={`deck-item${activeDeck?.id === deck.id ? ' active' : ''}`}>
+                      <button
+                        type="button"
+                        onClick={() => { setActiveDeckId(deck.id); setFoundCard(null); setEditions([]); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, color: 'inherit', minWidth: 0 }}
+                      >
+                        <p className="cinzel" style={{ fontSize: 13, fontWeight: 600, margin: 0, color: activeDeck?.id === deck.id ? '#e8c96a' : '#d4c090', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {deck.name}
+                        </p>
+                        <p style={{ fontSize: 12, margin: '3px 0 0', color: 'rgba(180,155,90,.5)', textTransform: 'capitalize', fontFamily: 'Crimson Pro,serif' }}>
+                          {deck.format} · {deck.cards.length} {t.cards}
+                        </p>
+                      </button>
+                      <button className="btn-ghost" style={{ width: 30, height: 30 }} title={t.removeDeck} onClick={() => handleDeleteDeck(deck.id)}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </aside>
+
+            {/* ══ CENTER — CARD SEARCH ════════════════════════════════════════ */}
+            <section className="panel" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                  <h2 className="cinzel" style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#e8c96a', letterSpacing: '.06em', textTransform: 'uppercase' }}>{t.cardSearch}</h2>
+                  <p style={{ fontSize: 13, margin: '4px 0 0', color: 'rgba(180,155,90,.5)', fontStyle: 'italic' }}>
+                    {t.activeDeck}: <span style={{ color: 'rgba(180,155,90,.8)' }}>{activeDeck?.name ?? t.noActiveDeck}</span>
+                  </p>
+                </div>
+                <Shield size={20} style={{ color: 'rgba(180,145,60,.25)', marginTop: 2 }} />
+              </div>
+
+              <div className="divider" />
+
+              {/* Search form */}
+              <form onSubmit={handleSearch} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                <div style={{ position: 'relative' }}>
                   <input
+                    className="mf-input"
                     value={cardName}
-                    onChange={(event) => {
-                      setCardName(event.target.value);
-                      setSuggestions([]);
-                      setShowSuggestions(true);
-                    }}
+                    onChange={(e) => { setCardName(e.target.value); setSuggestions([]); setShowSuggestions(true); }}
                     onFocus={() => setShowSuggestions(suggestions.length > 0)}
                     onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
-                    className="h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
                     placeholder={t.cardName}
                     autoComplete="off"
                     required
+                    style={{ paddingRight: 36 }}
                   />
+                  <Search size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(180,145,60,.4)', pointerEvents: 'none' }} />
 
                   {(loading.suggestions || (showSuggestions && suggestions.length > 0)) && (
-                    <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-950">
+                    <div className="suggest-drop">
                       {loading.suggestions && suggestions.length === 0 ? (
-                        <div className="flex h-10 items-center px-3 text-sm text-zinc-500 dark:text-zinc-400">
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          {t.search}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', color: 'rgba(180,145,60,.5)', fontSize: 14 }}>
+                          <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> {t.search}…
                         </div>
-                      ) : (
-                        suggestions.map((suggestion) => (
-                          <button
-                            key={suggestion}
-                            type="button"
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              handleSuggestionSelect(suggestion);
-                            }}
-                            className="block h-10 w-full truncate px-3 text-left text-sm transition hover:bg-zinc-100 focus:bg-zinc-100 focus:outline-none dark:hover:bg-zinc-900 dark:focus:bg-zinc-900"
-                          >
-                            {suggestion}
-                          </button>
-                        ))
-                      )}
+                      ) : suggestions.map((s) => (
+                        <button key={s} type="button" className="suggest-item" onMouseDown={(e) => { e.preventDefault(); handleSuggestionSelect(s); }}>{s}</button>
+                      ))}
                     </div>
                   )}
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading.search}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400"
-                >
-                  {loading.search ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+
+                <button type="submit" className="btn-primary btn-emerald" disabled={loading.search} style={{ whiteSpace: 'nowrap' }}>
+                  {loading.search ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={14} />}
                   {t.search}
                 </button>
               </form>
 
-              <label className="mt-3 block">
-                <span className="mb-2 block text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{t.edition}</span>
+              {/* Edition select */}
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontFamily: 'Cinzel,serif', letterSpacing: '.1em', color: 'rgba(180,145,60,.6)', textTransform: 'uppercase', marginBottom: 6 }}>{t.edition}</label>
                 <select
+                  className="mf-input mf-select"
                   value={cardEdition}
-                  onChange={(event) => handleEditionChange(event.target.value)}
+                  onChange={(e) => handleEditionChange(e.target.value)}
                   disabled={!foundCard || loading.edition}
-                  className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-emerald-400"
+                  style={{ opacity: (!foundCard || loading.edition) ? .4 : 1, cursor: (!foundCard || loading.edition) ? 'not-allowed' : 'pointer' }}
                 >
                   <option value="">{t.automaticEdition}</option>
-                  {editionOptions.map((edition) => (
-                    <option key={edition.setCode} value={edition.setCode}>
-                      {edition.editionName} ({edition.setCode.toUpperCase()})
-                    </option>
+                  {editionOptions.map((ed) => (
+                    <option key={ed.setCode} value={ed.setCode}>{ed.editionName} ({ed.setCode.toUpperCase()})</option>
                   ))}
                 </select>
-              </label>
+              </div>
 
-              <div className="mt-5 grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)]">
-                <div className="aspect-[488/680] overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950">
+              {/* Card preview + info */}
+              <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, flex: 1 }}>
+
+                {/* Image */}
+                <div className="card-frame" style={{ aspectRatio: '488/680' }}>
                   {foundCard?.imageUrl ? (
-                    <img src={foundCard.imageUrl} alt={foundCard.name} className="h-full w-full object-cover" />
+                    <img src={foundCard.imageUrl} alt={foundCard.name} className="fade-up" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                   ) : (
-                    <div className="flex h-full items-center justify-center px-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      {t.noCard}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', gap: 12, color: 'rgba(180,145,60,.2)', textAlign: 'center' }}>
+                      <Sword size={32} />
+                      <span style={{ fontSize: 12, fontFamily: 'Cinzel,serif', letterSpacing: '.1em', textTransform: 'uppercase' }}>{t.noCard}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex min-h-[360px] flex-col rounded-lg border border-zinc-200 bg-stone-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
-                  <div className="flex-1">
-                    <p className="text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{t.result}</p>
-                    <h3 className="mt-2 text-2xl font-semibold">{foundCard?.name ?? t.card}</h3>
+                {/* Details panel */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-                    <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                      <Info label={t.type} value={foundCard?.type ?? '-'} />
-                      <Info label={t.rarity} value={foundCard?.rarity ?? '-'} />
-                      <Info label={t.mana} value={foundCard?.manaCost ?? '-'} />
-                      <Info
-                        label={t.edition}
-                        value={foundCard?.setCode ? `${foundCard.editionName} (${foundCard.setCode.toUpperCase()})` : '-'}
-                      />
-                    </dl>
+                  {/* Name + rarity */}
+                  <div>
+                    <p style={{ fontSize: 11, fontFamily: 'Cinzel,serif', letterSpacing: '.12em', color: 'rgba(180,145,60,.5)', textTransform: 'uppercase', margin: 0 }}>{t.result}</p>
+                    <h3 className="cinzel" style={{ fontSize: 20, fontWeight: 600, margin: '6px 0 0', color: '#e8d8a0', lineHeight: 1.2 }}>
+                      {foundCard?.name ?? t.card}
+                    </h3>
+                    {foundCard?.rarity && (
+                      <span className={`badge ${rarityStyle(foundCard.rarity).bg}`} style={{ marginTop: 8, display: 'inline-block' }}>
+                        {foundCard.rarity}
+                      </span>
+                    )}
                   </div>
 
-                  <label className="mt-5 block">
-                    <span className="mb-2 block text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{t.condition}</span>
-                    <select
-                      value={cardCondition}
-                      onChange={(event) => setCardCondition(event.target.value)}
-                      className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none transition focus:border-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-emerald-400"
-                    >
-                      {conditions.map((condition) => (
-                        <option key={condition.value} value={condition.value}>
-                          {condition[language]}
-                        </option>
+                  <div className="divider" />
+
+                  {/* Info tiles */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <InfoTile label={t.type}    value={foundCard?.type ?? '—'} />
+                    <InfoTile label={t.mana}    value={foundCard?.manaCost ?? '—'} />
+                    <InfoTile label={t.edition} value={foundCard?.setCode ? `${foundCard.editionName} (${foundCard.setCode.toUpperCase()})` : '—'} colSpan />
+                  </div>
+
+                  {/* Condition select */}
+                  <div style={{ marginTop: 'auto' }}>
+                    <label style={{ display: 'block', fontSize: 11, fontFamily: 'Cinzel,serif', letterSpacing: '.1em', color: 'rgba(180,145,60,.6)', textTransform: 'uppercase', marginBottom: 6 }}>{t.condition}</label>
+                    <select className="mf-input mf-select" value={cardCondition} onChange={(e) => setCardCondition(e.target.value)}>
+                      {conditions.map((c) => (
+                        <option key={c.value} value={c.value}>{c[language]}</option>
                       ))}
                     </select>
-                  </label>
+                  </div>
 
+                  {/* Add button */}
                   <button
                     type="button"
+                    className="btn-primary btn-gold"
                     disabled={!activeDeck || !foundCard}
                     onClick={handleAddCard}
-                    className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-amber-600 px-4 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-amber-400 dark:text-zinc-950 dark:hover:bg-amber-300"
+                    style={{ width: '100%' }}
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus size={14} />
                     {t.addToDeck}
                   </button>
                 </div>
               </div>
             </section>
 
-            <aside className="flex min-h-0 flex-col gap-4">
-              <section className="min-h-[360px] rounded-lg border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="flex items-center justify-between border-b border-zinc-200 p-4 dark:border-zinc-800">
+            {/* ══ RIGHT SIDEBAR ═══════════════════════════════════════════════ */}
+            <aside style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* Active deck list */}
+              <div className="panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="panel-header">
                   <div>
-                    <h2 className="text-lg font-semibold">{activeDeck?.name ?? 'Deck'}</h2>
-                    <p className="text-sm capitalize text-zinc-600 dark:text-zinc-400">
-                      {activeDeck?.format ?? '-'} - {activeDeck?.cards.length ?? 0} {t.cards}
+                    <h2 className="cinzel" style={{ fontSize: 14, fontWeight: 700, margin: 0, color: '#e8d8a0' }}>{activeDeck?.name ?? 'Deck'}</h2>
+                    <p style={{ fontSize: 12, margin: '3px 0 0', color: 'rgba(180,155,90,.5)', textTransform: 'capitalize', fontStyle: 'italic' }}>
+                      {activeDeck?.format ?? '—'} · {activeDeck?.cards.length ?? 0} {t.cards}
                     </p>
                   </div>
-
-                  <div className="flex gap-2">
-                    <IconButton icon={Clipboard} label={t.copyTxt} onClick={handleCopyText} disabled={!activeDeck || !exportText} />
-                    <IconButton icon={FileText} label={t.downloadTxt} onClick={handleDownloadTxt} disabled={!activeDeck} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn-ghost" style={{ width: 30, height: 30 }} title={t.copyTxt} disabled={!activeDeck || !exportText} onClick={handleCopyText}>
+                      <Clipboard size={13} />
+                    </button>
+                    <button className="btn-ghost" style={{ width: 30, height: 30 }} title={t.downloadTxt} disabled={!activeDeck} onClick={handleDownloadTxt}>
+                      <FileText size={13} />
+                    </button>
                   </div>
                 </div>
 
-                <div className="max-h-[420px] overflow-y-auto p-3">
+                <div className="mf-scroll" style={{ padding: '10px 12px', overflowY: 'auto', flex: 1, maxHeight: 380 }}>
+                  {groupedCards.length === 0 && (
+                    <p style={{ fontSize: 14, color: 'rgba(180,155,90,.35)', textAlign: 'center', padding: '20px 0', fontStyle: 'italic' }}>{t.emptyDeck}</p>
+                  )}
                   {groupedCards.map(({ quantity, card }) => (
-                    <div
-                      key={getCardEntryKey(card)}
-                      className="mb-2 grid grid-cols-[42px_minmax(0,1fr)_40px] gap-3 rounded-md border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950"
-                    >
-                      <span className="flex h-10 w-10 items-center justify-center rounded bg-zinc-950 text-sm font-bold text-white dark:bg-emerald-500 dark:text-zinc-950">
+                    <div key={getCardEntryKey(card)} className="card-entry">
+                      <span className="cinzel" style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 3, background: 'linear-gradient(135deg,#c8a84b,#e8c96a)', color: '#1a1208', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
                         {quantity}
                       </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{card.name}</p>
-                        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                          {[card.setCode?.toUpperCase(), card.condition, card.type].filter(Boolean).join(' - ')}
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: '#d4c090', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'Cinzel,serif' }}>{card.name}</p>
+                        <p style={{ fontSize: 11, margin: '2px 0 0', color: 'rgba(180,155,90,.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {[card.setCode?.toUpperCase(), card.condition, card.type].filter(Boolean).join(' · ')}
                         </p>
                       </div>
-                      <IconButton icon={Trash2} label={t.removeCopy} onClick={() => handleRemoveCard(card)} />
+                      <button className="btn-ghost" style={{ width: 28, height: 28 }} title={t.removeCopy} onClick={() => handleRemoveCard(card)}>
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   ))}
-
-                  {groupedCards.length === 0 && <p className="p-3 text-sm text-zinc-500 dark:text-zinc-400">{t.emptyDeck}</p>}
                 </div>
-              </section>
+              </div>
 
-              <section className="rounded-lg border border-zinc-200 bg-white shadow-panel dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="border-b border-zinc-200 p-4 dark:border-zinc-800">
-                  <h2 className="text-base font-semibold">{t.decklistTxt}</h2>
+              {/* Decklist TXT */}
+              <div className="panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div className="panel-header">
+                  <span className="cinzel" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.1em', color: 'rgba(180,145,60,.7)', textTransform: 'uppercase' }}>{t.decklistTxt}</span>
                 </div>
+                <div style={{ padding: '12px 14px' }}>
+                  <textarea className="mf-textarea" value={exportText} readOnly rows={8} />
+                </div>
+              </div>
 
-                <div className="grid gap-3 p-4">
-                  <textarea
-                    value={exportText}
-                    readOnly
-                    className="h-56 resize-none rounded-md border border-zinc-300 bg-zinc-50 p-3 font-mono text-xs text-zinc-700 outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
-                  />
-                </div>
-              </section>
             </aside>
           </div>
         </div>
@@ -645,53 +914,36 @@ function App() {
   );
 }
 
-function validateCardForDeck(deck, card, t) {
-  if (deck.cards.length >= 100) {
-    throw new Error(t.deckLimit);
-  }
+/* ─── Sub-components ──────────────────────────────────── */
 
-  if (deck.format === 'pauper' && card.rarity !== 'common') {
-    throw new Error(t.pauperRule(card.name));
-  }
-}
-
-function uniqueEditions(editions) {
-  const seen = new Map();
-
-  for (const edition of editions) {
-    if (!seen.has(edition.setCode)) {
-      seen.set(edition.setCode, edition);
-    }
-  }
-
-  return Array.from(seen.values());
-}
-
-function isSameCardEntry(card, reference) {
-  return getCardEntryKey(card) === getCardEntryKey(reference);
-}
-
-function getCardEntryKey(card) {
-  return [card.name, card.setCode ?? '', card.condition ?? ''].join('|');
-}
-
-function Info({ label, value }) {
+function InfoTile({ label, value, colSpan }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-      <dt className="text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-medium text-zinc-950 dark:text-zinc-50">{value}</dd>
+    <div className="info-tile" style={colSpan ? { gridColumn: '1 / -1' } : {}}>
+      <p style={{ fontSize: 10, fontFamily: 'Cinzel,serif', letterSpacing: '.1em', color: 'rgba(180,145,60,.5)', textTransform: 'uppercase', margin: '0 0 4px' }}>{label}</p>
+      <p style={{ fontSize: 14, color: '#d4c090', margin: 0, wordBreak: 'break-word' }}>{value}</p>
     </div>
   );
 }
 
+/* ─── Helpers ─────────────────────────────────────────── */
+
+function validateCardForDeck(deck, card, t) {
+  if (deck.cards.length >= 100) throw new Error(t.deckLimit);
+  if (deck.format === 'pauper' && card.rarity !== 'common') throw new Error(t.pauperRule(card.name));
+}
+
+function uniqueEditions(editions) {
+  const seen = new Map();
+  for (const ed of editions) { if (!seen.has(ed.setCode)) seen.set(ed.setCode, ed); }
+  return Array.from(seen.values());
+}
+
+function isSameCardEntry(card, ref) { return getCardEntryKey(card) === getCardEntryKey(ref); }
+function getCardEntryKey(card) { return [card.name, card.setCode ?? '', card.condition ?? ''].join('|'); }
+
 function slug(value) {
   return (
-    value
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '') || 'deck'
+    value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'deck'
   );
 }
 
